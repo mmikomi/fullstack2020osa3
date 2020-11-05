@@ -1,98 +1,79 @@
-const { response } = require('express')
 const express = require('express')
 const app = express()
+require('dotenv').config()
+const Person = require('./models/person')
+
 const morgan = require('morgan')
 const cors = require('cors')
+const { response } = require('express')
 
-app.use(express.json())
-morgan.token('person', function (req) {return JSON.stringify(req.body)})
-app.use(morgan(':method :url :status :res[content-length] - :response-time ms :person'))
 app.use(cors())
+app.use(express.json())
 app.use(express.static('build'))
 
-let persons = [
-    {
-        id: 1,
-        name: "Arto Hellas",
-        number: "040-123456"
-    },
-    {
-        id: 2,
-        name: "Ada Lovelace",
-        number: "32-455-123123"
-    },
-    {
-        id: 3,
-        name: "Dan Abramov",
-        number: "55-6622-43"
-    },
-    {
-        id: 4,
-        name: "Mary Poppendick",
-        number: "351-11-233"
-    },
-    {
-        id: 5,
-        name: "Pepe Yeesson",
-        number: "232441-233"
-    },
-]
+morgan.token('person', function (req) {return JSON.stringify(req.body)})
+app.use(morgan(':method :url :status :res[content-length] - :response-time ms :person'))
 
-const Body = () => {
-    date = new Date().toString()
-    amt = persons.length
 
-    return `<h2>Phonebook has info for ${amt} persons</h2><h2>${date}</h2>`
-}
-
-const randomId = () => {
+// const randomId = () => {
     
     //hae lista id:istä
-    const onTheList = persons.map(person => person.id)
+  //  const onTheList = persons.map(person => person.id)
 
-    let testi
+  //  let testi
 
-    do {
+  //  do {
         //generoi id
-        testi = Math.floor(Math.random() * Math.floor(100))
+   //     testi = Math.floor(Math.random() * Math.floor(100))
 
         //jos id on listalla, generoi uusi id
-    } while (onTheList.includes(testi))
+    //} while (onTheList.includes(testi))
 
     //muuten palauta id
-    return testi
+    //return testi
 
     //jos henkilöitä tulee yli 100 tai muu rajaksi asetettu arvo, sovellus jää ikiluupppin
     //c'est la vie
-}
+//}
 
 app.get('/api/persons', (req, res) => {
-    res.json(persons)
+    Person.find({}).then(persons => {
+        res.json(persons)
+    })
 })
 
-app.get('/api/persons/:id', (req, res) => {
-    const id = Number(req.params.id)
-    const person = persons.find(person => person.id === id)
-
-    if (person) {
-        res.json(person)
-    } else {
-        res.status(404).end()
-    }
+app.get('/api/persons/:id', (req, res, next) => {
+    Person.findById(req.params.id).then(person => {
+        if(person) {
+            res.json(person)
+        } else {
+            res.status(404).end()
+        }
+    })
+    .catch(error => next(error))
 })
 
 app.get('/info', (req, res) => {
-    res.send(Body())
+    Person.countDocuments().then(result => {
+        console.log(result)
+        const amt = result
+        date = new Date().toString()
+
+        const content = `<h2>${date}</h2>\n<h2>Phonebook contains ${amt} entries</h2>`
+
+        res.send(content)
+    })
 })
 
-app.delete('/api/persons/:id', (req, res) => {
-    const id = Number(req.params.id)
-    persons = persons.filter(person => person.id !== id)
-
-    res.status(204).end()
+app.delete('/api/persons/:id', (req, res, next) => {
+    Person.findByIdAndRemove(req.params.id)
+        .then(result => {
+            res.status(204).end()
+        })
+        .catch(error => next(error))
 })
 
-app.post('/api/persons', (req, res) => {
+app.post('/api/persons', (req, res, next) => {
     // henkilön lisäys
     const body = req.body
 
@@ -102,25 +83,59 @@ app.post('/api/persons', (req, res) => {
         })
     }
 
-    if(persons.map(person => person.name).includes(body.name)){
-        return res.status(400).json({
-            error: 'name already in phonebook'
-        })
-    }
+   // if(Person.find({}).map(person => person.name).includes(body.name)){
+    //    return res.status(400).json({
+    //        error: 'name already in phonebook'
+    //    })
+    //}
+
+    const person = new Person({
+        name: body.name,
+        number: body.number
+    })
+
+    person.save().then(savedPerson => {
+        res.json(savedPerson)
+    })
+    .catch(error => next(error))
+})
+
+app.put('/api/persons/:id', (req, res, next) => {
+    const body = req.body
 
     const person = {
-        id: randomId(),
         name: body.name,
         number: body.number
     }
 
-    persons = persons.concat(person)
-
-    //morgan.token('person', function (req, res) {return JSON.stringify(req.params[body])})
-    res.json(person)
+    Person.findByIdAndUpdate(req.params.id, person, {new:true})
+        .then(updatedPerson => {
+            res.json(updatedPerson)
+        })
+        .catch(error => next(error))
 })
 
-const PORT = process.env.PORT || 3001
+const unknownEndpoint = (req, res) => {
+    res.status(404).send({error: 'unknown endpoint'})
+}
+
+app.use(unknownEndpoint)
+
+const errorHandler = (error, request, response, next) => {
+    console.error(error.message)
+
+    if (error.name === 'CastError') {
+        return response.status(400).send({ error: 'malformatted id'})
+    } else if (error.name === 'ValidationError') {
+        return response.status(400).json({ error: error.message})
+    }
+
+    next(error)
+}
+
+app.use(errorHandler)
+
+const PORT = process.env.PORT
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)
 })
